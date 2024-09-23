@@ -269,6 +269,7 @@ int client_init( struct client_t * client, const char * interface_name )
         return 1;
     }
 
+    printf("client init: OK!\n");
     return 0;
 }
 
@@ -404,6 +405,21 @@ int client_generate_packet( void * data, int payload_bytes )
     return sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct udphdr) + payload_bytes; 
 }
 
+int kick_tx( struct client_t * client )
+{
+    int err = 0;
+    int ret;
+
+    ret = sendto(xsk_socket__fd(client->xsk), NULL, 0, MSG_DONTWAIT, NULL, 0);
+    if ( ret < 0 )
+    {
+        // On error, -1 is returned, and errno is set */
+        fprintf(stderr, "WARN: %s() sendto() failed with errno:%d\n", __func__, errno);
+        err = errno;
+    }
+    return err;
+}
+
 void client_update( struct client_t * client )
 {
     // don't do anything if we don't have enough free packets to send a batch
@@ -449,6 +465,11 @@ void client_update( struct client_t * client )
     }
 
     xsk_ring_prod__submit( &client->send_queue, num_packets );
+    // In copy mode (MODE_SKB), Tx is driven by a syscall so we need to use e.g. sendto() to really send the packets.
+    if ( client->attached_skb )
+    {
+        kick_tx(client);
+    }
 
     // mark completed sent packet frames as free to be reused
 
